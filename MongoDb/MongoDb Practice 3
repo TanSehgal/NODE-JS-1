@@ -1,1 +1,108 @@
+/**
+ * E-commerce Catalog with Nested Document Structure in MongoDB
+ * -------------------------------------------------------------
+ * Demonstrates: Schema design, insertion, and queries using nested documents
+ */
+
+const mongoose = require("mongoose");
+
+// 🔗 Connect to MongoDB
+mongoose.connect("mongodb://127.0.0.1:27017/ecommerceDB")
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch(err => console.error("❌ Connection error:", err));
+
+// 🧱 Define the Variant subdocument schema
+const variantSchema = new mongoose.Schema({
+  color: String,
+  size: String,
+  stock: Number
+}, { _id: false });
+
+// 🏷️ Define the Product schema
+const productSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  price: Number,
+  category: String,
+  variants: [variantSchema]
+});
+
+// 🧩 Create the Product model
+const Product = mongoose.model("Product", productSchema);
+
+// 🚀 Main function to demonstrate all operations
+async function main() {
+  try {
+    // 1️⃣ Clear previous data
+    await Product.deleteMany({});
+    console.log("🧹 Old products cleared.\n");
+
+    // 2️⃣ Insert sample products
+    await Product.insertMany([
+      {
+        name: "T-Shirt",
+        price: 19.99,
+        category: "Apparel",
+        variants: [
+          { color: "Red", size: "M", stock: 50 },
+          { color: "Blue", size: "L", stock: 30 },
+          { color: "Black", size: "S", stock: 20 }
+        ]
+      },
+      {
+        name: "Sneakers",
+        price: 79.99,
+        category: "Footwear",
+        variants: [
+          { color: "White", size: "9", stock: 15 },
+          { color: "Black", size: "10", stock: 10 }
+        ]
+      },
+      {
+        name: "Backpack",
+        price: 49.99,
+        category: "Accessories",
+        variants: [
+          { color: "Gray", size: "Standard", stock: 40 },
+          { color: "Blue", size: "Standard", stock: 25 }
+        ]
+      }
+    ]);
+
+    console.log("✅ Sample products inserted.\n");
+
+    // 3️⃣ Retrieve all products
+    console.log("📦 All Products:");
+    console.log(await Product.find().lean(), "\n");
+
+    // 4️⃣ Filter products by category
+    console.log("👟 Products in 'Footwear' category:");
+    console.log(await Product.find({ category: "Footwear" }).lean(), "\n");
+
+    // 5️⃣ Project specific variant details
+    console.log("🎨 Product names and variant colors/stocks:");
+    console.log(await Product.find({}, { name: 1, "variants.color": 1, "variants.stock": 1, _id: 0 }).lean(), "\n");
+
+    // 6️⃣ Update stock for a specific variant (e.g., T-Shirt → Blue)
+    await Product.updateOne(
+      { name: "T-Shirt", "variants.color": "Blue" },
+      { $set: { "variants.$.stock": 25 } }
+    );
+
+    console.log("🔁 Stock updated for T-Shirt (Blue variant).\n");
+
+    // 7️⃣ Verify the update
+    console.log("🧾 Updated T-Shirt document:");
+    console.log(await Product.findOne({ name: "T-Shirt" }).lean());
+
+  } catch (err) {
+    console.error("❌ Error:", err);
+  } finally {
+    // 8️⃣ Close the connection
+    mongoose.connection.close();
+    console.log("\n🔒 Connection closed.");
+  }
+}
+
+// ▶️ Run the script
+main();
 
