@@ -1,1 +1,368 @@
+// CRUD Operations for Product Database Using Mongoose
+// This application demonstrates Create, Read, Update, and Delete operations
+// on a MongoDB collection using Mongoose in Node.js
 
+// Import required dependencies
+const express = require('express');
+const mongoose = require('mongoose');
+const app = express();
+
+// Middleware to parse JSON request bodies
+app.use(express.json());
+
+// MongoDB connection string
+const MONGO_URI = 'mongodb://localhost:27017/productDB';
+// For MongoDB Atlas, use: 'mongodb+srv://<username>:<password>@cluster.mongodb.net/productDB'
+
+// Connect to MongoDB
+mongoose.connect(MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => {
+  console.log('✅ Connected to MongoDB successfully');
+})
+.catch((error) => {
+  console.error('❌ MongoDB connection error:', error.message);
+  process.exit(1);
+});
+
+// Define Product Schema with validation
+const productSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: [true, 'Product name is required'],
+    trim: true,
+    minlength: [3, 'Product name must be at least 3 characters long'],
+    maxlength: [100, 'Product name cannot exceed 100 characters']
+  },
+  price: {
+    type: Number,
+    required: [true, 'Product price is required'],
+    min: [0, 'Price cannot be negative'],
+    validate: {
+      validator: function(value) {
+        return value > 0;
+      },
+      message: 'Price must be greater than 0'
+    }
+  },
+  category: {
+    type: String,
+    required: [true, 'Product category is required'],
+    trim: true,
+    enum: {
+      values: ['Electronics', 'Clothing', 'Food', 'Books', 'Home', 'Sports', 'Other'],
+      message: '{VALUE} is not a valid category'
+    }
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+// Update the updatedAt timestamp before saving
+productSchema.pre('save', function(next) {
+  this.updatedAt = Date.now();
+  next();
+});
+
+// Create Product Model
+const Product = mongoose.model('Product', productSchema);
+
+// ==================== CRUD OPERATIONS ====================
+
+// 1. CREATE - Add a new product
+app.post('/api/products', async (req, res) => {
+  try {
+    const { name, price, category } = req.body;
+    
+    // Create new product instance
+    const newProduct = new Product({
+      name,
+      price,
+      category
+    });
+    
+    // Save to database
+    const savedProduct = await newProduct.save();
+    
+    res.status(201).json({
+      success: true,
+      message: 'Product created successfully',
+      data: savedProduct
+    });
+  } catch (error) {
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors
+      });
+    }
+    
+    // Handle other errors
+    res.status(500).json({
+      success: false,
+      message: 'Error creating product',
+      error: error.message
+    });
+  }
+});
+
+// 2. READ - Get all products
+app.get('/api/products', async (req, res) => {
+  try {
+    // Retrieve all products from database
+    const products = await Product.find({});
+    
+    res.status(200).json({
+      success: true,
+      count: products.length,
+      data: products
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving products',
+      error: error.message
+    });
+  }
+});
+
+// 2a. READ - Get a single product by ID
+app.get('/api/products/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid product ID format'
+      });
+    }
+    
+    // Find product by ID
+    const product = await Product.findById(id);
+    
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found'
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      data: product
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving product',
+      error: error.message
+    });
+  }
+});
+
+// 3. UPDATE - Update a product by ID
+app.put('/api/products/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, price, category } = req.body;
+    
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid product ID format'
+      });
+    }
+    
+    // Update product and return the updated document
+    const updatedProduct = await Product.findByIdAndUpdate(
+      id,
+      { name, price, category, updatedAt: Date.now() },
+      { 
+        new: true, // Return the updated document
+        runValidators: true // Run schema validators on update
+      }
+    );
+    
+    if (!updatedProduct) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found'
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      message: 'Product updated successfully',
+      data: updatedProduct
+    });
+  } catch (error) {
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Error updating product',
+      error: error.message
+    });
+  }
+});
+
+// 4. DELETE - Delete a product by ID
+app.delete('/api/products/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid product ID format'
+      });
+    }
+    
+    // Delete product by ID
+    const deletedProduct = await Product.findByIdAndDelete(id);
+    
+    if (!deletedProduct) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found'
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      message: 'Product deleted successfully',
+      data: deletedProduct
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting product',
+      error: error.message
+    });
+  }
+});
+
+// Additional Feature: Get products by category
+app.get('/api/products/category/:category', async (req, res) => {
+  try {
+    const { category } = req.params;
+    
+    // Find products by category
+    const products = await Product.find({ category: category });
+    
+    res.status(200).json({
+      success: true,
+      count: products.length,
+      data: products
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving products by category',
+      error: error.message
+    });
+  }
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Error:', err.stack);
+  res.status(500).json({
+    success: false,
+    message: 'Something went wrong!',
+    error: err.message
+  });
+});
+
+// Start the server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server is running on port ${PORT}`);
+  console.log(`📡 API endpoints available at http://localhost:${PORT}/api/products`);
+});
+
+// ==================== USAGE EXAMPLES ====================
+/*
+
+1. CREATE a new product:
+   POST http://localhost:3000/api/products
+   Body: {
+     "name": "Laptop",
+     "price": 999.99,
+     "category": "Electronics"
+   }
+
+2. READ all products:
+   GET http://localhost:3000/api/products
+
+3. READ a single product by ID:
+   GET http://localhost:3000/api/products/:id
+
+4. UPDATE a product by ID:
+   PUT http://localhost:3000/api/products/:id
+   Body: {
+     "name": "Updated Laptop",
+     "price": 899.99,
+     "category": "Electronics"
+   }
+
+5. DELETE a product by ID:
+   DELETE http://localhost:3000/api/products/:id
+
+6. Get products by category:
+   GET http://localhost:3000/api/products/category/Electronics
+
+*/
+
+// ==================== PACKAGE.JSON ====================
+/*
+{
+  "name": "product-crud-mongoose",
+  "version": "1.0.0",
+  "description": "CRUD operations for Product Database using Mongoose",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mongoose": "^7.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.20"
+  }
+}
+*/
+
+// ==================== INSTALLATION INSTRUCTIONS ====================
+/*
+1. Initialize npm: npm init -y
+2. Install dependencies: npm install express mongoose
+3. Install dev dependencies: npm install --save-dev nodemon
+4. Make sure MongoDB is running locally or use MongoDB Atlas
+5. Run the application: npm start (or npm run dev for development)
+*/
