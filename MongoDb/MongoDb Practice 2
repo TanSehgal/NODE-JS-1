@@ -1,1 +1,240 @@
+# Student Management System (MVC) using Node.js, Express, MongoDB (Mongoose)
 
+# Project Structure
+# /models/Student.js
+# /controllers/studentController.js
+# /routes/studentRoutes.js
+# /config/db.js
+# server.js
+# package.json (instructions)
+
+# Note: This single file contains all project files concatenated with separators.
+# When implementing, create files/directories as indicated by the headings.
+
+================ FILE: package.json ================
+{
+  "name": "student-management-mvc",
+  "version": "1.0.0",
+  "description": "Student Management System using Node, Express, MongoDB (Mongoose) with MVC architecture",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mongoose": "^8.6.1",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
+
+================ FILE: config/db.js ================
+import mongoose from 'mongoose';
+
+export const connectDB = async () => {
+  const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/student_mvc_db';
+  try {
+    await mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 10000,
+    });
+    console.log('MongoDB connected');
+  } catch (err) {
+    console.error('MongoDB connection error:', err.message);
+    process.exit(1);
+  }
+};
+
+================ FILE: models/Student.js ================
+import mongoose from 'mongoose';
+
+const studentSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: [true, 'Name is required'],
+      trim: true,
+      minlength: [2, 'Name must be at least 2 characters'],
+      maxlength: [100, 'Name must be at most 100 characters']
+    },
+    age: {
+      type: Number,
+      required: [true, 'Age is required'],
+      min: [3, 'Age must be at least 3'],
+      max: [120, 'Age must be at most 120']
+    },
+    course: {
+      type: String,
+      required: [true, 'Course is required'],
+      trim: true,
+      enum: {
+        values: ['Math', 'Science', 'Arts', 'Engineering', 'Commerce', 'Medicine', 'Law', 'Other'],
+        message: 'Course must be one of predefined values'
+      },
+      default: 'Other'
+    }
+  },
+  { timestamps: true }
+);
+
+// Optional: index for faster queries by course
+studentSchema.index({ course: 1 });
+
+export const Student = mongoose.model('Student', studentSchema);
+
+================ FILE: controllers/studentController.js ================
+import { Student } from '../models/Student.js';
+
+// Utility to standardize responses
+const ok = (res, data, status = 200) => res.status(status).json({ success: true, data });
+const fail = (res, message, status = 400, details) => res.status(status).json({ success: false, message, details });
+
+export const createStudent = async (req, res) => {
+  try {
+    const { name, age, course } = req.body;
+    const student = await Student.create({ name, age, course });
+    return ok(res, student, 201);
+  } catch (err) {
+    if (err.name === 'ValidationError') {
+      return fail(res, 'Validation failed', 422, err.errors);
+    }
+    return fail(res, 'Failed to create student', 500, err.message);
+  }
+};
+
+export const getStudents = async (req, res) => {
+  try {
+    const { course, name } = req.query;
+    const filter = {};
+    if (course) filter.course = course;
+    if (name) filter.name = new RegExp(name, 'i');
+    const students = await Student.find(filter).sort({ createdAt: -1 });
+    return ok(res, students);
+  } catch (err) {
+    return fail(res, 'Failed to fetch students', 500, err.message);
+  }
+};
+
+export const getStudentById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const student = await Student.findById(id);
+    if (!student) return fail(res, 'Student not found', 404);
+    return ok(res, student);
+  } catch (err) {
+    return fail(res, 'Failed to fetch student', 500, err.message);
+  }
+};
+
+export const updateStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    const student = await Student.findByIdAndUpdate(id, updates, {
+      new: true,
+      runValidators: true,
+    });
+    if (!student) return fail(res, 'Student not found', 404);
+    return ok(res, student);
+  } catch (err) {
+    if (err.name === 'ValidationError') {
+      return fail(res, 'Validation failed', 422, err.errors);
+    }
+    return fail(res, 'Failed to update student', 500, err.message);
+  }
+};
+
+export const deleteStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const student = await Student.findByIdAndDelete(id);
+    if (!student) return fail(res, 'Student not found', 404);
+    return ok(res, { id: student._id, deleted: true });
+  } catch (err) {
+    return fail(res, 'Failed to delete student', 500, err.message);
+  }
+};
+
+================ FILE: routes/studentRoutes.js ================
+import { Router } from 'express';
+import {
+  createStudent,
+  getStudents,
+  getStudentById,
+  updateStudent,
+  deleteStudent,
+} from '../controllers/studentController.js';
+
+const router = Router();
+
+router.get('/', getStudents);
+router.get('/:id', getStudentById);
+router.post('/', createStudent);
+router.put('/:id', updateStudent);
+router.delete('/:id', deleteStudent);
+
+export default router;
+
+================ FILE: server.js ================
+import express from 'express';
+import morgan from 'morgan';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { connectDB } from './config/db.js';
+import studentRoutes from './routes/studentRoutes.js';
+
+dotenv.config();
+
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(morgan('dev'));
+
+// DB
+await connectDB();
+
+// Routes
+app.get('/', (req, res) => {
+  res.json({ message: 'Student Management System API', docs: {
+    list: 'GET /api/students',
+    get: 'GET /api/students/:id',
+    create: 'POST /api/students',
+    update: 'PUT /api/students/:id',
+    delete: 'DELETE /api/students/:id'
+  }});
+});
+
+app.use('/api/students', studentRoutes);
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ success: false, message: 'Route not found' });
+});
+
+// Global error handler (fallback)
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ success: false, message: 'Internal Server Error' });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+================ USAGE NOTES ================
+# 1) Create files/folders as shown and paste respective sections.
+# 2) Create a .env file with MONGODB_URI=mongodb://127.0.0.1:27017/student_mvc_db (or Atlas URI).
+# 3) Install deps: npm install
+# 4) Start dev: npm run dev
+# 5) Example requests:
+#    POST /api/students {"name":"Alice","age":21,"course":"Engineering"}
+#    GET  /api/students
+#    GET  /api/students/:id
+#    PUT  /api/students/:id {"course":"Science"}
+#    DELETE /api/students/:id
